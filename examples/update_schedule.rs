@@ -4,7 +4,7 @@ use embedded_bacnet::{
     application_protocol::{
         application_pdu::ApplicationPdu,
         confirmed::{ConfirmedRequest, ConfirmedRequestService},
-        primitives::data_value::{ApplicationDataValue, ApplicationDataValueWrite},
+        primitives::data_value::{ApplicationDataValue, ApplicationDataValue},
         services::{
             read_property_multiple::{
                 PropertyValue, ReadPropertyMultiple, ReadPropertyMultipleAck,
@@ -152,7 +152,7 @@ fn main() -> Result<(), MainError> {
         PropertyId::PropWeeklySchedule,
         None,
         None,
-        ApplicationDataValueWrite::WeeklySchedule(weekly_schedule),
+        ApplicationDataValue::WeeklySchedule(weekly_schedule),
     );
     let req = ConfirmedRequest::new(0, ConfirmedRequestService::WriteProperty(write_property));
     let apdu = ApplicationPdu::ConfirmedRequest(req);

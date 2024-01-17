@@ -4,7 +4,7 @@ use embedded_bacnet::{
     application_protocol::{
         application_pdu::ApplicationPdu,
         confirmed::{ConfirmedRequest, ConfirmedRequestService},
-        primitives::data_value::{ApplicationDataValueWrite, Enumerated},
+        primitives::data_value::{ApplicationDataValue, Enumerated},
         services::write_property::WriteProperty,
     },
     common::{
@@ -49,7 +49,7 @@ fn main() -> Result<(), MainError> {
         PropertyId::PropPresentValue,
         None,
         None,
-        ApplicationDataValueWrite::Enumerated(Enumerated::Binary(Binary::On)),
+        ApplicationDataValue::Enumerated(Enumerated::Binary(Binary::On)),
     );
     let req = ConfirmedRequest::new(0, ConfirmedRequestService::WriteProperty(write_property));
     let apdu = ApplicationPdu::ConfirmedRequest(req);

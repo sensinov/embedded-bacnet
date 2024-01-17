@@ -34,15 +34,6 @@ pub enum ApplicationDataValue<'a> {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ApplicationDataValueWrite<'a> {
-    Boolean(bool),
-    Enumerated(Enumerated),
-    Real(f32),
-    WeeklySchedule(WeeklySchedule<'a>),
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Enumerated {
     Units(EngineeringUnits),
@@ -284,70 +275,6 @@ impl<'a> CharacterString<'a> {
         })?;
 
         Ok(CharacterString { inner })
-    }
-}
-
-impl<'a> ApplicationDataValueWrite<'a> {
-    pub fn decode(
-        object_id: &ObjectId,
-        property_id: &PropertyId,
-        reader: &mut Reader,
-        buf: &'a [u8],
-    ) -> Result<Self, Error> {
-        match property_id {
-            PropertyId::PropWeeklySchedule => {
-                let weekly_schedule = WeeklySchedule::decode(reader, buf)?;
-                Ok(Self::WeeklySchedule(weekly_schedule))
-            }
-            _ => {
-                let tag = Tag::decode(reader, buf)?;
-                match tag.number {
-                    TagNumber::Application(ApplicationTagNumber::Boolean) => {
-                        Ok(Self::Boolean(tag.value > 0))
-                    }
-                    TagNumber::Application(ApplicationTagNumber::Real) => {
-                        if tag.value != 4 {
-                            return Err(Error::Length((
-                                "real tag should have length of 4",
-                                tag.value,
-                            )));
-                        }
-                        let bytes = reader.read_bytes(buf)?;
-                        Ok(Self::Real(f32::from_be_bytes(bytes)))
-                    }
-                    TagNumber::Application(ApplicationTagNumber::Enumerated) => {
-                        let value = decode_enumerated(object_id, property_id, &tag, reader, buf)?;
-                        Ok(Self::Enumerated(value))
-                    }
-                    tag_number => Err(Error::TagNotSupported((
-                        "ApplicationDataValueWrite decode",
-                        tag_number,
-                    ))),
-                }
-            }
-        }
-    }
-
-    pub fn encode(&self, writer: &mut Writer) {
-        match self {
-            Self::Boolean(x) => {
-                let len = 1;
-                let tag = Tag::new(TagNumber::Application(ApplicationTagNumber::Boolean), len);
-                tag.encode(writer);
-                let value = if *x { 1_u8 } else { 0_u8 };
-                writer.push(value)
-            }
-            Self::Real(x) => {
-                let len = 4;
-                let tag = Tag::new(TagNumber::Application(ApplicationTagNumber::Real), len);
-                tag.encode(writer);
-                writer.extend_from_slice(&f32::to_be_bytes(*x))
-            }
-            Self::Enumerated(x) => {
-                x.encode(writer);
-            }
-            Self::WeeklySchedule(x) => x.encode(writer),
-        }
     }
 }
 
