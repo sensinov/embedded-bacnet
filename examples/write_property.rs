@@ -41,7 +41,7 @@ const IP_ADDRESS: &str = "192.168.1.249:47808";
 
 fn main() -> Result<(), MainError> {
     simple_logger::init().unwrap();
-    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0xBAC1))?;
+    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0))?;
 
     // encode packet
     let write_property = WriteProperty::new(

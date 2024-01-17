@@ -48,7 +48,7 @@ const DEVICE_ID: u32 = 79079;
 
 fn main() -> Result<(), MainError> {
     simple_logger::init().unwrap();
-    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0xBAC0))?;
+    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0))?;
 
     set_time(&socket)?;
     request_date_time(&socket)?;

@@ -39,7 +39,7 @@ impl From<embedded_bacnet::common::error::Error> for MainError {
 }
 fn main() -> Result<(), MainError> {
     simple_logger::init().unwrap();
-    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0xBAC0))?;
+    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0))?;
 
     // encode packet
     let object_id = ObjectId::new(ObjectType::ObjectDevice, DEVICE_ID);

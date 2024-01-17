@@ -33,7 +33,7 @@ impl From<embedded_bacnet::common::error::Error> for MainError {
 // You can get around this by sending the who_is directly to a known IP aaddress
 fn main() -> Result<(), Error> {
     simple_logger::init().unwrap();
-    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0xBAC0))?;
+    let socket = UdpSocket::bind(format!("0.0.0.0:{}", 0))?;
     socket.set_broadcast(true)?;
 
     let who_is = WhoIs {};
