@@ -1,5 +1,5 @@
 use crate::{
-    application_protocol::unconfirmed::UnconfirmedServiceChoice,
+    application_protocol::unconfirmed::{UnconfirmedServiceChoice, UnconfirmedRequest},
     common::{
         error::Error,
         helper::{
@@ -10,7 +10,7 @@ use crate::{
         object_id::{ObjectId, ObjectType},
         spec::Segmentation,
         tag::{ApplicationTagNumber, Tag, TagNumber},
-    },
+    }, network_protocol::data_link::DataLink,
 };
 
 #[derive(Debug, Clone)]
@@ -20,6 +20,20 @@ pub struct IAm {
     pub max_apdu: usize,
     pub segmentation: Segmentation,
     pub vendor_id: u16,
+}
+
+impl<'a> TryFrom<DataLink<'a>> for IAm {
+    type Error = Error;
+
+    fn try_from(value: DataLink<'a>) -> Result<Self, Self::Error> {
+        let request: UnconfirmedRequest = value.try_into()?;
+        match request {
+            UnconfirmedRequest::IAm(iam) => Ok(iam),
+            _ => Err(Error::ConvertDataLink(
+                "apdu message is not a UnconfirmedRequest IAm",
+            )),
+        }
+    }
 }
 
 impl IAm {

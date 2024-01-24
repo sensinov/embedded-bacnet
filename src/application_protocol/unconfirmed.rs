@@ -1,10 +1,10 @@
-use crate::common::{
+use crate::{common::{
     error::{Error, Unimplemented},
     io::{Reader, Writer},
-};
+}, network_protocol::{data_link::DataLink, network_pdu::NetworkMessage}};
 
 use super::{
-    application_pdu::ApduType,
+    application_pdu::{ApduType, ApplicationPdu},
     services::{
         change_of_value::CovNotification, i_am::IAm, time_synchronization::TimeSynchronization,
         who_is::WhoIs,
@@ -18,6 +18,22 @@ pub enum UnconfirmedRequest<'a> {
     IAm(IAm),
     CovNotification(CovNotification<'a>),
     TimeSynchronization(TimeSynchronization),
+}
+
+impl<'a> TryFrom<DataLink<'a>> for UnconfirmedRequest<'a> {
+    type Error = Error;
+
+    fn try_from(value: DataLink<'a>) -> Result<Self, Self::Error> {
+        match value.npdu {
+            Some(x) => match x.network_message {
+                NetworkMessage::Apdu(ApplicationPdu::UnconfirmedRequest(request)) => Ok(request),
+                _ => Err(Error::ConvertDataLink(
+                    "npdu message is not an apdu unconfirmed request",
+                )),
+            },
+            _ => Err(Error::ConvertDataLink("no npdu defined in message")),
+        }
+    }
 }
 
 impl<'a> UnconfirmedRequest<'a> {
