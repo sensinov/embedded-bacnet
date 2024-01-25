@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::fmt::{Debug, Display};
 
 use crate::{
     application_protocol::{
@@ -22,12 +22,29 @@ use crate::{
     network_protocol::data_link::DataLink,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ReadPropertyMultipleAck<'a> {
     pub objects_with_results: &'a [ObjectWithResults<'a>],
     buf: &'a [u8],
 }
+
+impl<'a> Debug for ReadPropertyMultipleAck<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if f.alternate() {
+            f.write_str("ReadPropertyMultipleAck {\n")?;
+            write!(f, "\tobjects_with_results: {:#?}\n", &self.objects_with_results)?;
+            write!(f, "\tbuf: {:?}\n", &self.buf)?;
+            f.write_str("}\n")
+        } else {
+            f.debug_struct("ReadPropertyMultipleAck")
+                .field("objects_with_results", &self.objects_with_results)
+                .field("buf", &self.buf)
+                .finish()
+        }
+    }
+}
+
 
 impl<'a> IntoIterator for &'_ ReadPropertyMultipleAck<'a> {
     type Item = Result<ObjectWithResults<'a>, Error>;

@@ -1,3 +1,5 @@
+use core::fmt::{Debug};
+
 use crate::{
     application_protocol::{
         confirmed::{ComplexAck, ComplexAckService, ConfirmedServiceChoice},
@@ -26,11 +28,27 @@ pub enum ReadPropertyValue<'a> {
     ApplicationDataValue(ApplicationDataValue<'a>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ObjectIdList<'a> {
     object_ids: &'a [ObjectId],
     buf: &'a [u8],
+}
+
+impl<'a> Debug for ObjectIdList<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if f.alternate() {
+            f.write_str("ObjectIdList {\n")?;
+            write!(f, "\tobject_ids: {:#?}\n", &self.object_ids)?;
+            write!(f, "\tbuf: {:?}\n", &self.buf)?;
+            f.write_str("}\n")
+        } else {
+            f.debug_struct("ObjectIdList")
+                .field("object_ids", &self.object_ids)
+                .field("buf", &self.buf)
+                .finish()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
