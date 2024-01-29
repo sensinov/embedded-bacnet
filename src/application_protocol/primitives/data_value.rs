@@ -5,7 +5,7 @@ use flagset::{FlagSet, Flags};
 use crate::common::{
     daily_schedule::WeeklySchedule,
     error::Error,
-    helper::{decode_unsigned, encode_application_enumerated},
+    helper::{decode_signed, decode_unsigned, encode_application_enumerated},
     io::{Reader, Writer},
     object_id::{ObjectId, ObjectType},
     property_id::PropertyId,
@@ -29,6 +29,7 @@ pub enum ApplicationDataValue<'a> {
     Enumerated(Enumerated),
     BitString(BitString<'a>),
     UnsignedInt(u32),
+    SignedInt(i32),
     WeeklySchedule(WeeklySchedule<'a>),
 }
 
@@ -335,6 +336,11 @@ impl<'a> ApplicationDataValue<'a> {
                     .encode(writer);
                 writer.extend_from_slice(&x.to_be_bytes());
             }
+            ApplicationDataValue::SignedInt(x) => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::SignedInt), 4)
+                    .encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes());
+            }
             ApplicationDataValue::WeeklySchedule(x) => {
                 // no application tag required for weekly schedule
                 x.encode(writer);
@@ -396,6 +402,10 @@ impl<'a> ApplicationDataValue<'a> {
             ApplicationTagNumber::UnsignedInt => {
                 let value = decode_unsigned(tag.value, reader, buf)? as u32;
                 Ok(ApplicationDataValue::UnsignedInt(value))
+            }
+            ApplicationTagNumber::SignedInt => {
+                let value = decode_signed(tag.value, reader, buf)? as i32;
+                Ok(ApplicationDataValue::SignedInt(value))
             }
             ApplicationTagNumber::Time => {
                 if tag.value != 4 {
