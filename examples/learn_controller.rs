@@ -75,24 +75,26 @@ fn main() -> Result<(), MainError> {
 
     let mut map = HashMap::new();
 
-    if let ReadPropertyValue::ObjectIdList(list) = ack.property_value {
-        // put all objects in their respective bins by object type
-        for item in list.into_iter() {
-            let item = item?;
-            match item.object_type {
-                ObjectType::ObjectBinaryOutput
-                | ObjectType::ObjectBinaryInput
-                | ObjectType::ObjectBinaryValue
-                | ObjectType::ObjectAnalogInput
-                | ObjectType::ObjectAnalogOutput
-                | ObjectType::ObjectAnalogValue
-                | ObjectType::ObjectSchedule
-                | ObjectType::ObjectTrendlog => {
-                    let list = map.entry(item.object_type.clone() as u32).or_insert(vec![]);
-                    list.push(item);
-                }
-                _ => {}
+    // put all objects in their respective bins by object type
+    for item in &ack.property_value {
+        let value = item.unwrap();
+        let object_id = match value {
+            ApplicationDataValue::ObjectId(object_id) => object_id,
+            _ => continue
+        };
+        match object_id.object_type {
+            ObjectType::ObjectBinaryOutput
+            | ObjectType::ObjectBinaryInput
+            | ObjectType::ObjectBinaryValue
+            | ObjectType::ObjectAnalogInput
+            | ObjectType::ObjectAnalogOutput
+            | ObjectType::ObjectAnalogValue
+            | ObjectType::ObjectSchedule
+            | ObjectType::ObjectTrendlog => {
+                let list = map.entry(object_id.object_type.clone() as u32).or_insert(vec![]);
+                list.push(object_id);
             }
+            _ => {}
         }
     }
 

@@ -67,15 +67,9 @@ fn main() -> Result<(), MainError> {
     let message = DataLink::decode(&mut reader, buf)?;
     println!("Decoded:  {:?}\n", message);
     let ack: ReadPropertyAck = message.try_into()?;
-    match ack.property_value {
-        ReadPropertyValue::ObjectIdList(list) => {
-            for item in &list {
-                println!("{:?}", item);
-            }
-        }
-        _ => {
-            // ignore
-        }
+
+    for item in &ack.property_value {
+        println!("{:?}", item);
     }
 
     Ok(())

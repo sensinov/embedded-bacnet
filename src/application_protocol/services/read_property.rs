@@ -16,157 +16,44 @@ use crate::{
         object_id::ObjectId,
         property_id::PropertyId,
         spec::BACNET_ARRAY_ALL,
-        tag::{ApplicationTagNumber, Tag, TagNumber},
     },
     network_protocol::data_link::DataLink,
 };
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ReadPropertyValue<'a> {
-    ObjectIdList(ObjectIdList<'a>),
-    ApplicationData(ApplicationDataArray<'a>),
-}
-
-impl<'a> TryFrom<ReadPropertyValue<'a>> for ApplicationDataValue<'a> {
-    type Error = Error;
-
-    fn try_from(value: ReadPropertyValue<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ReadPropertyValue::ApplicationData(array) => {
-                if let Some(value) = array.into_iter().next() {
-                    Ok(value?)
-                } else {
-                    Err(Error::InvalidValue(
-                        "read property doesn't contain a single value"
-                    ))
-                }
-            },
-            _ => Err(Error::InvalidValue(
-                "read property doesn't contain application data"
-            )),
-        }
-    }
-}
-
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ObjectIdList<'a> {
-    object_ids: &'a [ObjectId],
-    buf: &'a [u8],
-}
-
-impl<'a> Debug for ObjectIdList<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if f.alternate() {
-            f.write_str("ObjectIdList {\n")?;
-            write!(f, "\tobject_ids: {:#?}\n", &self.object_ids)?;
-            write!(f, "\tbuf: {:?}\n", &self.buf)?;
-            f.write_str("}\n")
-        } else {
-            f.debug_struct("ObjectIdList")
-                .field("object_ids", &self.object_ids)
-                .field("buf", &self.buf)
-                .finish()
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ObjectIdIter<'a> {
-    reader: Reader,
-    buf: &'a [u8],
-}
-
-impl<'a> ObjectIdList<'a> {
-    pub fn new(object_ids: &'a [ObjectId]) -> Self {
-        Self {
-            object_ids,
-            buf: &[],
-        }
-    }
-
-    pub fn new_from_buf(buf: &'a [u8]) -> Self {
-        Self {
-            object_ids: &[],
-            buf,
-        }
-    }
-
-    pub fn encode(&self, writer: &mut Writer) {
-        for object_id in self.object_ids {
-            Tag::new(
-                TagNumber::Application(ApplicationTagNumber::ObjectId),
-                ObjectId::LEN,
-            )
-            .encode(writer);
-            object_id.encode(writer);
-        }
-    }
-}
-
-impl<'a> ObjectIdIter<'a> {
-    pub fn new(buf: &'a [u8]) -> Self {
-        Self {
-            reader: Reader::new_with_len(buf.len()),
-            buf,
-        }
-    }
-
-    fn next_internal(&mut self) -> Result<ObjectId, Error> {
-        let tag = Tag::decode_expected(
-            &mut self.reader,
-            self.buf,
-            TagNumber::Application(ApplicationTagNumber::ObjectId),
-            "ObjectIdList nex",
-        )?;
-
-        ObjectId::decode(tag.value, &mut self.reader, self.buf)
-    }
-}
-
-impl<'a> IntoIterator for &'_ ObjectIdList<'a> {
-    type Item = Result<ObjectId, Error>;
-    type IntoIter = ObjectIdIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ObjectIdIter::new(self.buf)
-    }
-}
-
-impl<'a> Iterator for ObjectIdIter<'a> {
-    type Item = Result<ObjectId, Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.reader.eof() {
-            None
-        } else {
-            Some(self.next_internal())
-        }
-    }
-}
-
-#[derive(Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ApplicationDataArray<'a> {
+pub struct ReadPropertyValue<'a> {
     object_id: ObjectId,
     property_id: PropertyId,
     values: &'a [ApplicationDataValue<'a>],
     buf: &'a [u8],
 }
 
+impl<'a> TryFrom<ReadPropertyValue<'a>> for ApplicationDataValue<'a> {
+    type Error = Error;
+
+    fn try_from(property_value: ReadPropertyValue<'a>) -> Result<Self, Self::Error> {
+        if let Some(value) = property_value.into_iter().next() {
+            Ok(value?)
+        } else {
+            Err(Error::InvalidValue(
+                "read property doesn't contain a single value"
+            ))
+        }
+    }
+}
+
 // There is no need to log more fields than buf, since object_id and
 // property_id are logged as part ReadPropertyAck.
-impl<'a> Debug for ApplicationDataArray<'a> {
+impl<'a> Debug for ReadPropertyValue<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if f.alternate() {
-            f.write_str("ApplicationDataArray {\n")?;
+            f.write_str("ReadPropertyValue {\n")?;
             write!(f, "\tvalues: {:#?}\n", &self.values)?;
             write!(f, "\tbuf: {:?}\n", &self.buf)?;
             f.write_str("}\n")
         } else {
-            f.debug_struct("ApplicationDataArray")
+            f.debug_struct("ReadPropertyValue")
                 .field("values", &self.values)
                 .field("buf", &self.buf)
                 .finish()
@@ -174,7 +61,7 @@ impl<'a> Debug for ApplicationDataArray<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'_ ApplicationDataArray<'a> {
+impl<'a> IntoIterator for &'_ ReadPropertyValue<'a> {
     type Item = Result<ApplicationDataValue<'a>, Error>;
 
     type IntoIter = ApplicationDataValueIter<'a>;
@@ -246,15 +133,8 @@ impl<'a> ReadPropertyAck<'a> {
         encode_context_object_id(writer, 0, &self.object_id);
         encode_context_enumerated(writer, 1, &self.property_id);
         encode_opening_tag(writer, 3);
-        match &self.property_value {
-            ReadPropertyValue::ApplicationData(array) => {
-                for value in array.values {
-                    value.encode(writer);
-                }
-            }
-            ReadPropertyValue::ObjectIdList(value) => {
-                value.encode(writer);
-            }
+        for value in self.property_value.values {
+            value.encode(writer);
         }
         encode_closing_tag(writer, 3);
     }
@@ -266,34 +146,18 @@ impl<'a> ReadPropertyAck<'a> {
             decode_context_property_id(reader, buf, 1, "ReadPropertyAck decode property_id")?;
 
         let buf = get_tagged_body_for_tag(reader, buf, 3, "ReadPropertyAck decode data values")?;
+        let property_value = ReadPropertyValue {
+            object_id,
+            property_id,
+            values: &[],
+            buf,
+        };
 
-        match property_id {
-            PropertyId::PropObjectList => {
-                let property_value =
-                    ReadPropertyValue::ObjectIdList(ObjectIdList::new_from_buf(buf));
-
-                Ok(Self {
-                    object_id,
-                    property_id,
-                    property_value,
-                })
-            }
-            property_id => {
-                let data  = ApplicationDataArray {
-                    object_id,
-                    property_id,
-                    values: &[],
-                    buf,
-                };
-                let property_value = ReadPropertyValue::ApplicationData(data);
-
-                Ok(Self {
-                    object_id,
-                    property_id,
-                    property_value,
-                })
-            }
-        }
+        Ok(Self {
+            object_id,
+            property_id,
+            property_value,
+        })
     }
 }
 
