@@ -59,7 +59,7 @@ impl<'a> PropertyResult<'a> {
             "CovNotification next expected value opening tag",
         )?;
         let tag = Tag::decode(reader, buf)?;
-        let value = ApplicationDataValue::decode(&tag, object_id, &property_id, reader, buf)?;
+        let value = ApplicationDataValue::decode_with_tag(&tag, object_id, &property_id, reader, buf)?;
         Tag::decode_expected(
             reader,
             buf,

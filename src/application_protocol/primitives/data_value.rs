@@ -351,6 +351,16 @@ impl<'a> ApplicationDataValue<'a> {
     }
 
     pub fn decode(
+        object_id: &ObjectId,
+        property_id: &PropertyId,
+        mut reader: &mut Reader,
+        buf: &'a [u8],
+    ) -> Result<Self, Error> {
+        let tag = Tag::decode(&mut reader, buf)?;
+        ApplicationDataValue::decode_with_tag(&tag, object_id, property_id, reader, buf)
+    }
+
+    pub fn decode_with_tag(
         tag: &Tag,
         object_id: &ObjectId,
         property_id: &PropertyId,

@@ -81,7 +81,7 @@ impl<'a> WriteProperty<'a> {
             "WriteProperty decode value",
             TagNumber::ContextSpecificOpening(Self::TAG_VALUE),
         )?;
-        let value = ApplicationDataValue::decode(&tag,&object_id, &property_id, reader, buf)?;
+        let value = ApplicationDataValue::decode_with_tag(&tag, &object_id, &property_id, reader, buf)?;
         Tag::decode_expected(
             reader,
             buf,

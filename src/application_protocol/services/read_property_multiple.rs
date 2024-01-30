@@ -285,7 +285,7 @@ impl<'a> PropertyValue<'a> {
                     }
                     property_id => {
                         let tag = Tag::decode(&mut reader, buf)?;
-                        let value = ApplicationDataValue::decode(
+                        let value = ApplicationDataValue::decode_with_tag(
                             &tag,
                             object_id,
                             property_id,

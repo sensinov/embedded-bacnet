@@ -4,7 +4,7 @@ use embedded_bacnet::{
     application_protocol::{
         application_pdu::ApplicationPdu,
         confirmed::{ConfirmedRequest, ConfirmedRequestService},
-        primitives::data_value::{ApplicationDataValue, ApplicationDataValue},
+        primitives::data_value::ApplicationDataValue,
         services::{
             read_property_multiple::{
                 PropertyValue, ReadPropertyMultiple, ReadPropertyMultipleAck,
