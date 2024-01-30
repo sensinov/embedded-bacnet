@@ -91,9 +91,9 @@ fn main() -> Result<(), MainError> {
     for values in &message {
         let values = values?;
         for x in values.property_results.into_iter() {
-            let x = x?;
-            match x.value {
-                PropertyValue::PropValue(ApplicationDataValue::WeeklySchedule(weekly_schedule)) => {
+            let value: ApplicationDataValue = x?.value.try_into()?;
+            match value {
+                ApplicationDataValue::WeeklySchedule(weekly_schedule) => {
                     monday = weekly_schedule
                         .monday
                         .into_iter()

@@ -23,10 +23,10 @@ use crate::{
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ReadPropertyValue<'a> {
-    object_id: ObjectId,
-    property_id: PropertyId,
-    values: &'a [ApplicationDataValue<'a>],
-    buf: &'a [u8],
+    pub(crate) object_id: ObjectId,
+    pub(crate) property_id: PropertyId,
+    pub values: &'a [ApplicationDataValue<'a>],
+    pub(crate) buf: &'a [u8],
 }
 
 impl<'a> TryFrom<ReadPropertyValue<'a>> for ApplicationDataValue<'a> {

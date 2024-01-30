@@ -6,7 +6,6 @@ use crate::{
         primitives::data_value::ApplicationDataValue,
     },
     common::{
-        daily_schedule::WeeklySchedule,
         error::Error,
         helper::{
             decode_context_object_id, decode_context_property_id, decode_unsigned,
@@ -21,6 +20,8 @@ use crate::{
     },
     network_protocol::data_link::DataLink,
 };
+
+use super::read_property::ReadPropertyValue;
 
 #[derive(Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -44,7 +45,6 @@ impl<'a> Debug for ReadPropertyMultipleAck<'a> {
         }
     }
 }
-
 
 impl<'a> IntoIterator for &'_ ReadPropertyMultipleAck<'a> {
     type Item = Result<ObjectWithResults<'a>, Error>;
@@ -234,11 +234,8 @@ impl<'a> PropertyResult<'a> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PropertyValue<'a> {
-    PropValue(ApplicationDataValue<'a>),
+    PropValue(ReadPropertyValue<'a>),
     PropError(PropertyAccessError),
-    // TODO: figure out if we need these
-    PropDescription(&'a str),
-    PropObjectName(&'a str),
 }
 
 impl<'a> PropertyValue<'a> {
@@ -247,14 +244,14 @@ impl<'a> PropertyValue<'a> {
 
     pub fn encode(&self, writer: &mut Writer) {
         match self {
-            Self::PropValue(val) => {
+            Self::PropValue(property_value) => {
                 encode_opening_tag(writer, Self::PROPERTY_VALUE_TAG);
-                val.encode(writer);
+                for value in property_value.values {
+                    value.encode(writer);
+                }
                 encode_closing_tag(writer, Self::PROPERTY_VALUE_TAG);
             }
             Self::PropError(_) => todo!(),
-            Self::PropObjectName(_) => todo!(),
-            Self::PropDescription(_) => todo!(),
         }
     }
 
@@ -272,29 +269,12 @@ impl<'a> PropertyValue<'a> {
 
         let property_value = match tag_number {
             Self::PROPERTY_VALUE_TAG => {
-                match &property_id {
-                    PropertyId::PropEventTimeStamps => {
-                        // ignore for now
-                        PropertyValue::PropValue(ApplicationDataValue::Boolean(false))
-                    }
-                    PropertyId::PropWeeklySchedule => {
-                        let weekly_schedule = WeeklySchedule::decode(&mut reader, buf)?;
-                        PropertyValue::PropValue(ApplicationDataValue::WeeklySchedule(
-                            weekly_schedule,
-                        ))
-                    }
-                    property_id => {
-                        let tag = Tag::decode(&mut reader, buf)?;
-                        let value = ApplicationDataValue::decode_with_tag(
-                            &tag,
-                            object_id,
-                            property_id,
-                            &mut reader,
-                            buf,
-                        )?;
-                        PropertyValue::PropValue(value)
-                    }
-                }
+                PropertyValue::PropValue(ReadPropertyValue {
+                    object_id: object_id.clone(),
+                    property_id: property_id.clone(),
+                    values: &[],
+                    buf: buf,
+                })
             }
             Self::PROPERTY_ERROR_TAG => {
                 // property read error
@@ -320,10 +300,47 @@ pub struct PropertyAccessError {
     pub error_code: ErrorCode,
 }
 
+impl<'a> TryFrom<PropertyValue<'a>> for ApplicationDataValue<'a> {
+    type Error = Error;
+
+    fn try_from(property_value: PropertyValue<'a>) -> Result<Self, Self::Error> {
+        match property_value {
+            PropertyValue::PropValue(value) => value.try_into(),
+            PropertyValue::PropError(err) => Err(Error::PropertyAccessError(err))
+        }
+    }
+}
+
 impl<'a> Display for PropertyValue<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match &self {
-            Self::PropValue(x) => write!(f, "{}", x),
+            Self::PropValue(x) => {
+                write!(f, "[")?;
+                if x.values.is_empty() {
+                    let mut is_first = true;
+                    for result in x {
+                        if !is_first {
+                            write!(f, ", ")?;
+                        }
+                        if let Ok(value) = result {
+                            write!(f, "{}", value)?;
+                        } else {
+                            write!(f, "property value undecodable")?;
+                        }
+                        is_first = false;
+                    }
+                } else {
+                    let mut is_first = true;
+                    for value in x.values {
+                        if !is_first {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", value)?;
+                        is_first = false;
+                    }
+                }
+                write!(f, "]")
+            }
             _ => write!(f, "property value unprintable",),
         }
     }

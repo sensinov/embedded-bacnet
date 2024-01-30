@@ -302,8 +302,7 @@ fn get_record_count(socket: &UdpSocket, object_id: ObjectId) -> Result<u32, Main
     let message: ReadPropertyAck = message.try_into()?;
 
     // read values
-    let value = ApplicationDataValue::try_from(message.property_value).unwrap();
-    if let ApplicationDataValue::UnsignedInt(_) = value {
+    if let ApplicationDataValue::UnsignedInt(_) = message.property_value.try_into()? {
         Ok(1)
     } else {
         Ok(0)

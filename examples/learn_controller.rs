@@ -205,16 +205,18 @@ fn get_multi_binary(
         let obj = obj?;
         let mut x = obj.property_results.into_iter();
         let name = x.next().unwrap()?.value.to_string();
-        let value = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::Enumerated(Enumerated::Binary(
+        let value: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let value = match value  {
+            ApplicationDataValue::Enumerated(Enumerated::Binary(
                 Binary::On,
-            ))) => true,
+            )) => true,
             _ => false,
         };
-        let status_flags = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::BitString(BitString::StatusFlags(
+        let status_flags: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let status_flags = match status_flags {
+            ApplicationDataValue::BitString(BitString::StatusFlags(
                 x,
-            ))) => x,
+            )) => x,
             _ => unreachable!(),
         };
 
@@ -263,20 +265,23 @@ fn get_multi_analog(
         let obj = obj?;
         let mut x = obj.property_results.into_iter();
         let name = x.next().unwrap()?.value.to_string();
-        let value = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::Real(val)) => val,
+        let value: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let value = match value {
+            ApplicationDataValue::Real(val) => val,
             _ => unreachable!(),
         };
-        let units = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::Enumerated(Enumerated::Units(u))) => {
+        let units: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let units = match units  {
+            ApplicationDataValue::Enumerated(Enumerated::Units(u)) => {
                 u.clone()
             }
             _ => unreachable!(),
         };
-        let status_flags = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::BitString(BitString::StatusFlags(
+        let status_flags: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let status_flags = match status_flags {
+            ApplicationDataValue::BitString(BitString::StatusFlags(
                 x,
-            ))) => x,
+            )) => x,
             _ => FlagSet::default(), // ignore property read errors
         };
 
@@ -321,8 +326,9 @@ fn get_multi_trend_log(
         let obj = obj?;
         let mut x = obj.property_results.into_iter();
         let name = x.next().unwrap()?.value.to_string();
-        let record_count = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::UnsignedInt(val)) => val,
+        let record_count: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let record_count = match record_count {
+            ApplicationDataValue::UnsignedInt(val) => val,
             _ => unreachable!(),
         };
 
@@ -363,8 +369,9 @@ fn get_multi_schedule(
         let obj = obj?;
         let mut x = obj.property_results.into_iter();
         let name = x.next().unwrap()?.value.to_string();
-        let value = match x.next().unwrap()?.value {
-            PropertyValue::PropValue(ApplicationDataValue::WeeklySchedule(schedule)) => schedule,
+        let value: ApplicationDataValue = x.next().unwrap()?.value.try_into()?;
+        let value = match value {
+            ApplicationDataValue::WeeklySchedule(schedule) => schedule,
             _ => panic!("expected weekly schedule"),
         };
 

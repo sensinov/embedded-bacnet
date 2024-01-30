@@ -1,6 +1,6 @@
 use crate::application_protocol::{
     application_pdu::ApduType, confirmed::ConfirmedServiceChoice,
-    services::read_range::ReadRangeValueType, unconfirmed::UnconfirmedServiceChoice,
+    services::{read_property_multiple::PropertyAccessError, read_range::ReadRangeValueType}, unconfirmed::UnconfirmedServiceChoice,
 };
 
 use super::tag::{ApplicationTagNumber, Tag, TagNumber};
@@ -24,6 +24,7 @@ pub enum Error {
     TagValueInvalid((&'static str, Tag, u32)),
     ReaderEof(usize),
     ConvertDataLink(&'static str),
+    PropertyAccessError(PropertyAccessError),
 }
 
 #[derive(Debug, Clone)]
