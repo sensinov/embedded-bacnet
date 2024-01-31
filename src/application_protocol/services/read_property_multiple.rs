@@ -295,6 +295,7 @@ impl<'a> PropertyValue<'a> {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PropertyAccessError {
     pub error_class: ErrorClass,
     pub error_code: ErrorCode,
