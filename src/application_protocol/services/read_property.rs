@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use crate::{
     application_protocol::{
         confirmed::{ComplexAck, ComplexAckService, ConfirmedServiceChoice},
@@ -21,15 +23,143 @@ use crate::{
 
 #[cfg(feature = "alloc")]
 use {
-    crate::common::spooky::Phantom, alloc::vec::Vec, bacnet_macros::remove_lifetimes_from_fn_args,
+    crate::common::spooky::Phantom, alloc::vec::Vec,
 };
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum ReadPropertyValue<'a> {
-    ObjectIdList(ObjectIdList<'a>),
-    ApplicationDataValue(ApplicationDataValue<'a>),
+// ── ReadPropertyValue ────────────────────────────────────────────────────
+
+#[cfg(not(feature = "alloc"))]
+#[derive(Clone)]
+pub struct ReadPropertyValue<'a> {
+    pub(crate) object_id: ObjectId,
+    pub(crate) property_id: PropertyId,
+    pub(crate) buf: &'a [u8],
 }
+
+#[cfg(feature = "alloc")]
+#[derive(Clone)]
+pub struct ReadPropertyValue<'a> {
+    pub values: Vec<ApplicationDataValue<'a>>,
+}
+
+impl<'a> TryFrom<ReadPropertyValue<'a>> for ApplicationDataValue<'a> {
+    type Error = Error;
+
+    fn try_from(property_value: ReadPropertyValue<'a>) -> Result<Self, Self::Error> {
+        if let Some(value) = property_value.into_iter().next() {
+            Ok(value?)
+        } else {
+            Err(Error::InvalidValue(
+                "read property doesn't contain a single value",
+            ))
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<'a> Debug for ReadPropertyValue<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ReadPropertyValue")
+            .field("buf", &self.buf)
+            .finish()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> Debug for ReadPropertyValue<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ReadPropertyValue")
+            .field("values", &self.values)
+            .finish()
+    }
+}
+
+// ── ApplicationDataValueIter (lazy, no_alloc) ────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct ApplicationDataValueIter<'a> {
+    object_id: ObjectId,
+    property_id: PropertyId,
+    reader: Reader,
+    buf: &'a [u8],
+}
+
+impl<'a> Iterator for ApplicationDataValueIter<'a> {
+    type Item = Result<ApplicationDataValue<'a>, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.reader.eof() {
+            None
+        } else {
+            Some(ApplicationDataValue::decode_from_buffer(
+                &self.object_id,
+                &self.property_id,
+                &mut self.reader,
+                self.buf,
+            ))
+        }
+    }
+}
+
+// ── IntoIterator for ReadPropertyValue ───────────────────────────────────
+
+#[cfg(not(feature = "alloc"))]
+impl<'a> IntoIterator for ReadPropertyValue<'a> {
+    type Item = Result<ApplicationDataValue<'a>, Error>;
+    type IntoIter = ApplicationDataValueIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ApplicationDataValueIter {
+            object_id: self.object_id,
+            property_id: self.property_id,
+            reader: Reader::new_with_len(self.buf.len()),
+            buf: self.buf,
+        }
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl<'a> IntoIterator for &'_ ReadPropertyValue<'a> {
+    type Item = Result<ApplicationDataValue<'a>, Error>;
+    type IntoIter = ApplicationDataValueIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ApplicationDataValueIter {
+            object_id: self.object_id,
+            property_id: self.property_id,
+            reader: Reader::new_with_len(self.buf.len()),
+            buf: self.buf,
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> IntoIterator for ReadPropertyValue<'a> {
+    type Item = Result<ApplicationDataValue<'a>, Error>;
+    type IntoIter = AllocValueIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        AllocValueIter {
+            inner: self.values.into_iter(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+pub struct AllocValueIter<'a> {
+    inner: alloc::vec::IntoIter<ApplicationDataValue<'a>>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> Iterator for AllocValueIter<'a> {
+    type Item = Result<ApplicationDataValue<'a>, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Ok)
+    }
+}
+
+// ── ObjectIdList (kept for encoding and specific callers) ────────────────
 
 #[cfg(not(feature = "alloc"))]
 #[derive(Debug, Clone)]
@@ -147,6 +277,8 @@ impl<'a> Iterator for ObjectIdIter<'a> {
     }
 }
 
+// ── ReadPropertyAck ──────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ReadPropertyAck<'a> {
@@ -170,23 +302,34 @@ impl<'a> TryFrom<DataLink<'a>> for ReadPropertyAck<'a> {
 }
 
 impl<'a> ReadPropertyAck<'a> {
+    #[cfg(not(feature = "alloc"))]
     pub fn encode(&self, writer: &mut Writer) {
         writer.push(ConfirmedServiceChoice::ReadProperty as u8);
         encode_context_object_id(writer, 0, &self.object_id);
         encode_context_enumerated(writer, 1, &self.property_id);
         encode_opening_tag(writer, 3);
-        match &self.property_value {
-            ReadPropertyValue::ApplicationDataValue(value) => {
-                value.encode(writer);
-            }
-            ReadPropertyValue::ObjectIdList(value) => {
-                value.encode(writer);
+        // In no_alloc mode we can re-encode from the iterator
+        for value in &self.property_value {
+            if let Ok(v) = value {
+                v.encode(writer);
             }
         }
         encode_closing_tag(writer, 3);
     }
 
-    #[cfg_attr(feature = "alloc", remove_lifetimes_from_fn_args)]
+    #[cfg(feature = "alloc")]
+    pub fn encode(&self, writer: &mut Writer) {
+        writer.push(ConfirmedServiceChoice::ReadProperty as u8);
+        encode_context_object_id(writer, 0, &self.object_id);
+        encode_context_enumerated(writer, 1, &self.property_id);
+        encode_opening_tag(writer, 3);
+        for value in self.property_value.values.iter() {
+            value.encode(writer);
+        }
+        encode_closing_tag(writer, 3);
+    }
+
+    #[cfg(not(feature = "alloc"))]
     pub fn decode(reader: &mut Reader, buf: &'a [u8]) -> Result<Self, Error> {
         let object_id =
             decode_context_object_id(reader, buf, 0, "ReadPropertyAck decode object_id")?;
@@ -194,34 +337,52 @@ impl<'a> ReadPropertyAck<'a> {
             decode_context_property_id(reader, buf, 1, "ReadPropertyAck decode property_id")?;
 
         let buf = get_tagged_body_for_tag(reader, buf, 3, "ReadPropertyAck decode data values")?;
-        let mut reader = Reader::new_with_len(buf.len());
+        let property_value = ReadPropertyValue {
+            object_id,
+            property_id,
+            buf,
+        };
 
-        match property_id {
-            PropertyId::PropObjectList => {
-                let object_ids = ObjectIdList::decode(&mut reader, buf)?;
-                let property_value = ReadPropertyValue::ObjectIdList(object_ids);
+        Ok(Self {
+            object_id,
+            property_id,
+            property_value,
+        })
+    }
 
-                Ok(Self {
-                    object_id,
-                    property_id,
-                    property_value,
-                })
-            }
-            property_id => {
-                let tag = Tag::decode(&mut reader, buf)?;
-                let value =
-                    ApplicationDataValue::decode(&tag, &object_id, &property_id, &mut reader, buf)?;
-                let property_value = ReadPropertyValue::ApplicationDataValue(value);
+    #[cfg(feature = "alloc")]
+    pub fn decode(reader: &mut Reader, buf: &[u8]) -> Result<Self, Error> {
+        let object_id =
+            decode_context_object_id(reader, buf, 0, "ReadPropertyAck decode object_id")?;
+        let property_id =
+            decode_context_property_id(reader, buf, 1, "ReadPropertyAck decode property_id")?;
 
-                Ok(Self {
-                    object_id,
-                    property_id,
-                    property_value,
-                })
-            }
+        let inner_buf =
+            get_tagged_body_for_tag(reader, buf, 3, "ReadPropertyAck decode data values")?;
+        let mut inner_reader = Reader::new_with_len(inner_buf.len());
+
+        let mut values = Vec::new();
+        while !inner_reader.eof() {
+            let value = ApplicationDataValue::decode_from_buffer(
+                &object_id,
+                &property_id,
+                &mut inner_reader,
+                inner_buf,
+            )?;
+            values.push(value);
         }
+
+        let property_value = ReadPropertyValue { values };
+
+        Ok(Self {
+            object_id,
+            property_id,
+            property_value,
+        })
     }
 }
+
+// ── ReadProperty (request) ───────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

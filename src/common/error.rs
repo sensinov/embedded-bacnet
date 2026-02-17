@@ -3,7 +3,10 @@ use crate::{
         application_pdu::ApduType, confirmed::ConfirmedServiceChoice,
         services::read_range::ReadRangeValueType, unconfirmed::UnconfirmedServiceChoice,
     },
-    common::tag::{ApplicationTagNumber, Tag, TagNumber},
+    common::{
+        spec::{ErrorClass, ErrorCode},
+        tag::{ApplicationTagNumber, Tag, TagNumber},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -22,6 +25,7 @@ pub enum Error {
     TagValueInvalid((&'static str, Tag, u32)),
     ReaderEof(usize),
     ConvertDataLink(&'static str),
+    PropertyAccessError(ErrorClass, ErrorCode),
 }
 
 #[derive(Debug, Clone)]

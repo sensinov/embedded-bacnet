@@ -3,7 +3,7 @@ use core::{fmt::Display, str::from_utf8};
 use crate::common::{
     daily_schedule::WeeklySchedule,
     error::Error,
-    helper::{decode_unsigned, encode_application_enumerated},
+    helper::{decode_signed, decode_unsigned, encode_application_enumerated},
     io::{Reader, Writer},
     object_id::{ObjectId, ObjectType},
     property_id::PropertyId,
@@ -32,6 +32,7 @@ pub enum ApplicationDataValue<'a> {
     Enumerated(Enumerated),
     BitString(BitString<'a>),
     UnsignedInt(u32),
+    SignedInt(i32),
     WeeklySchedule(WeeklySchedule<'a>),
 }
 
@@ -461,6 +462,10 @@ impl<'a> ApplicationDataValue<'a> {
                     .encode(writer);
                 writer.extend_from_slice(&x.to_be_bytes());
             }
+            ApplicationDataValue::SignedInt(x) => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::SignedInt), 4).encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes());
+            }
             ApplicationDataValue::WeeklySchedule(x) => {
                 // no application tag required for weekly schedule
                 x.encode(writer);
@@ -468,6 +473,25 @@ impl<'a> ApplicationDataValue<'a> {
 
             x => todo!("{:?}", x),
         };
+    }
+
+    #[cfg_attr(feature = "alloc", bacnet_macros::remove_lifetimes_from_fn_args)]
+    pub fn decode_from_buffer(
+        object_id: &ObjectId,
+        property_id: &PropertyId,
+        reader: &mut Reader,
+        buf: &'a [u8],
+    ) -> Result<Self, Error> {
+        match property_id {
+            PropertyId::PropWeeklySchedule => {
+                let ws = WeeklySchedule::decode(reader, buf)?;
+                Ok(Self::WeeklySchedule(ws))
+            }
+            _ => {
+                let tag = Tag::decode(reader, buf)?;
+                Self::decode(&tag, object_id, property_id, reader, buf)
+            }
+        }
     }
 
     #[cfg_attr(feature = "alloc", bacnet_macros::remove_lifetimes_from_fn_args)]
@@ -523,6 +547,10 @@ impl<'a> ApplicationDataValue<'a> {
             ApplicationTagNumber::UnsignedInt => {
                 let value = decode_unsigned(tag.value, reader, buf)? as u32;
                 Ok(ApplicationDataValue::UnsignedInt(value))
+            }
+            ApplicationTagNumber::SignedInt => {
+                let value = decode_signed(tag.value, reader, buf)?;
+                Ok(ApplicationDataValue::SignedInt(value))
             }
             ApplicationTagNumber::Time => {
                 if tag.value != 4 {
