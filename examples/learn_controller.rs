@@ -4,12 +4,12 @@
 use std::collections::HashMap;
 
 use crate::common::{get_bacnet_socket, MySocket};
-use clap::{command, Parser};
+use clap::Parser;
 use embedded_bacnet::{
     application_protocol::{
         primitives::data_value::{ApplicationDataValue, BitString, Enumerated},
         services::{
-            read_property::{ReadProperty, ReadPropertyValue},
+            read_property::ReadProperty,
             read_property_multiple::{
                 PropertyValue, ReadPropertyMultiple, ReadPropertyMultipleObject,
             },
@@ -56,9 +56,9 @@ async fn main() -> Result<(), BacnetError<MySocket>> {
     let result = bacnet.read_property(&mut buf, request).await?;
 
     let mut map = HashMap::new();
-    if let ReadPropertyValue::ObjectIdList(list) = result.property_value {
-        // put all objects in their respective bins by object type
-        for item in list.object_ids {
+    // iterate over property values to extract object IDs
+    for value in result.property_value {
+        if let Ok(ApplicationDataValue::ObjectId(item)) = value {
             match item.object_type {
                 ObjectType::ObjectBinaryOutput
                 | ObjectType::ObjectBinaryInput
@@ -174,16 +174,14 @@ async fn get_multi_binary(
     for obj in &result.objects_with_results {
         let x = &obj.property_results;
         let name = x[0].value.to_string();
-        let value = match &x[1].value {
-            PropertyValue::PropValue(ApplicationDataValue::Enumerated(Enumerated::Binary(
-                Binary::On,
-            ))) => true,
-            _ => false,
-        };
-        let status = match &x[2].value {
-            PropertyValue::PropValue(ApplicationDataValue::BitString(BitString::Status(x))) => {
-                x.clone()
-            }
+        let val: ApplicationDataValue = x[1].value.clone().try_into().unwrap();
+        let value = matches!(
+            val,
+            ApplicationDataValue::Enumerated(Enumerated::Binary(Binary::On))
+        );
+        let val: ApplicationDataValue = x[2].value.clone().try_into().unwrap();
+        let status = match val {
+            ApplicationDataValue::BitString(BitString::Status(x)) => x,
             _ => unreachable!(),
         };
 
@@ -223,20 +221,19 @@ async fn get_multi_analog(
     for obj in &result.objects_with_results {
         let x = &obj.property_results;
         let name = x[0].value.to_string();
-        let value = match x[1].value {
-            PropertyValue::PropValue(ApplicationDataValue::Real(val)) => val,
+        let val: ApplicationDataValue = x[1].value.clone().try_into().unwrap();
+        let value = match val {
+            ApplicationDataValue::Real(val) => val,
             _ => unreachable!(),
         };
-        let units = match &x[2].value {
-            PropertyValue::PropValue(ApplicationDataValue::Enumerated(Enumerated::Units(u))) => {
-                u.clone()
-            }
+        let val: ApplicationDataValue = x[2].value.clone().try_into().unwrap();
+        let units = match val {
+            ApplicationDataValue::Enumerated(Enumerated::Units(u)) => u,
             _ => unreachable!(),
         };
-        let status = match &x[3].value {
-            PropertyValue::PropValue(ApplicationDataValue::BitString(BitString::Status(x))) => {
-                x.clone()
-            }
+        let val: ApplicationDataValue = x[3].value.clone().try_into().unwrap();
+        let status = match val {
+            ApplicationDataValue::BitString(BitString::Status(x)) => x,
             _ => unreachable!(),
         };
 
@@ -273,8 +270,9 @@ async fn get_multi_trend_log(
     for obj in &result.objects_with_results {
         let x = &obj.property_results;
         let name = x[0].value.to_string();
-        let record_count = match &x[1].value {
-            PropertyValue::PropValue(ApplicationDataValue::UnsignedInt(val)) => *val,
+        let val: ApplicationDataValue = x[1].value.clone().try_into().unwrap();
+        let record_count = match val {
+            ApplicationDataValue::UnsignedInt(val) => val,
             _ => unreachable!(),
         };
 
@@ -307,10 +305,9 @@ async fn get_multi_schedule(
     for obj in &result.objects_with_results {
         let x = &obj.property_results;
         let name = x[0].value.to_string();
-        let value = match &x[1].value {
-            PropertyValue::PropValue(ApplicationDataValue::WeeklySchedule(schedule)) => {
-                schedule.clone()
-            }
+        let val: ApplicationDataValue = x[1].value.clone().try_into().unwrap();
+        let value = match val {
+            ApplicationDataValue::WeeklySchedule(schedule) => schedule,
             _ => panic!("expected weekly schedule"),
         };
 

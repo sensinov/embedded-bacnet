@@ -1,11 +1,12 @@
 // cargo run --example read_property_list -- --addr "192.168.1.249:47808" --device-id 79079
 // cargo run --example read_property_list --no-default-features -- --addr "192.168.1.249:47808" --device-id 79079
 
-use clap::{command, Parser};
+use clap::Parser;
 use common::MySocket;
 use embedded_bacnet::{
-    application_protocol::services::read_property::{
-        ReadProperty, ReadPropertyAck, ReadPropertyValue,
+    application_protocol::{
+        primitives::data_value::ApplicationDataValue,
+        services::read_property::ReadProperty,
     },
     common::{
         object_id::{ObjectId, ObjectType},
@@ -42,24 +43,17 @@ async fn main() -> Result<(), BacnetError<MySocket>> {
     let result = bacnet.read_property(&mut buf, request).await?;
 
     // print
-    print_result(result)
-}
-
-#[cfg(feature = "alloc")]
-fn print_result(result: ReadPropertyAck) -> Result<(), BacnetError<MySocket>> {
-    if let ReadPropertyValue::ObjectIdList(list) = result.property_value {
-        for item in &list.object_ids {
-            println!("{:?}", item);
-        }
-    }
-    Ok(())
-}
-
-#[cfg(not(feature = "alloc"))]
-fn print_result(result: ReadPropertyAck) -> Result<(), BacnetError<MySocket>> {
-    if let ReadPropertyValue::ObjectIdList(list) = result.property_value {
-        for item in &list {
-            println!("{:?}", item?);
+    for item in result.property_value {
+        match item {
+            Ok(ApplicationDataValue::ObjectId(object_id)) => {
+                println!("{:?}", object_id);
+            }
+            Ok(other) => {
+                println!("Unexpected: {:?}", other);
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+            }
         }
     }
 

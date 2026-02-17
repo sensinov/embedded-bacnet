@@ -7,13 +7,13 @@
 use core::ops::Range;
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use clap::{command, Parser};
+use clap::Parser;
 use common::MySocket;
 use embedded_bacnet::{
     application_protocol::{
         primitives::data_value::ApplicationDataValue,
         services::{
-            read_property::{ReadProperty, ReadPropertyValue},
+            read_property::ReadProperty,
             read_range::{ReadRange, ReadRangeByPosition, ReadRangeRequestType, ReadRangeValue},
         },
     },
@@ -69,12 +69,10 @@ async fn get_record_count(
     let request = ReadProperty::new(object_id, PropertyId::PropRecordCount);
     let result = bacnet.read_property(buf, request).await?;
 
-    if let ReadPropertyValue::ApplicationDataValue(ApplicationDataValue::UnsignedInt(x)) =
-        result.property_value
-    {
-        Ok(x as usize)
-    } else {
-        Ok(0)
+    let value: Result<ApplicationDataValue, _> = result.property_value.try_into();
+    match value {
+        Ok(ApplicationDataValue::UnsignedInt(x)) => Ok(x as usize),
+        _ => Ok(0),
     }
 }
 
