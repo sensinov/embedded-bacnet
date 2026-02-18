@@ -42,6 +42,9 @@ pub enum ApplicationDataValueWrite<'a> {
     Boolean(bool),
     Enumerated(Enumerated),
     Real(f32),
+    Double(f64),
+    UnsignedInt(u32),
+    SignedInt(i32),
     WeeklySchedule(WeeklySchedule<'a>),
 }
 
@@ -373,6 +376,24 @@ impl<'a> ApplicationDataValueWrite<'a> {
                         let value = decode_enumerated(object_id, property_id, &tag, reader, buf)?;
                         Ok(Self::Enumerated(value))
                     }
+                    TagNumber::Application(ApplicationTagNumber::Double) => {
+                        if tag.value != 8 {
+                            return Err(Error::Length((
+                                "double tag should have length of 8",
+                                tag.value,
+                            )));
+                        }
+                        let bytes = reader.read_bytes(buf)?;
+                        Ok(Self::Double(f64::from_be_bytes(bytes)))
+                    }
+                    TagNumber::Application(ApplicationTagNumber::UnsignedInt) => {
+                        let value = decode_unsigned(tag.value, reader, buf)? as u32;
+                        Ok(Self::UnsignedInt(value))
+                    }
+                    TagNumber::Application(ApplicationTagNumber::SignedInt) => {
+                        let value = decode_signed(tag.value, reader, buf)? as i32;
+                        Ok(Self::SignedInt(value))
+                    }
                     tag_number => Err(Error::TagNotSupported((
                         "ApplicationDataValueWrite decode",
                         tag_number,
@@ -399,6 +420,24 @@ impl<'a> ApplicationDataValueWrite<'a> {
             }
             Self::Enumerated(x) => {
                 x.encode(writer);
+            }
+            Self::Double(x) => {
+                let len = 8;
+                let tag = Tag::new(TagNumber::Application(ApplicationTagNumber::Double), len);
+                tag.encode(writer);
+                writer.extend_from_slice(&f64::to_be_bytes(*x))
+            }
+            Self::UnsignedInt(x) => {
+                let tag =
+                    Tag::new(TagNumber::Application(ApplicationTagNumber::UnsignedInt), 4);
+                tag.encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes())
+            }
+            Self::SignedInt(x) => {
+                let tag =
+                    Tag::new(TagNumber::Application(ApplicationTagNumber::SignedInt), 4);
+                tag.encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes())
             }
             Self::WeeklySchedule(x) => x.encode(writer),
         }
