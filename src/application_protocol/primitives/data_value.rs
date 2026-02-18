@@ -22,6 +22,7 @@ use {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ApplicationDataValue<'a> {
+    Null,
     Boolean(bool),
     Real(f32),
     Double(f64),
@@ -39,6 +40,7 @@ pub enum ApplicationDataValue<'a> {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ApplicationDataValueWrite<'a> {
+    Null,
     Boolean(bool),
     Enumerated(Enumerated),
     Real(f32),
@@ -182,6 +184,7 @@ pub struct CharacterString<'a> {
 impl<'a> Display for ApplicationDataValue<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            ApplicationDataValue::Null => write!(f, "Null"),
             ApplicationDataValue::Real(x) => write!(f, "{}", x),
             ApplicationDataValue::Double(x) => write!(f, "{}", x),
             ApplicationDataValue::CharacterString(x) => write!(f, "{}", &x.inner),
@@ -405,6 +408,9 @@ impl<'a> ApplicationDataValueWrite<'a> {
 
     pub fn encode(&self, writer: &mut Writer) {
         match self {
+            Self::Null => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::Null), 0).encode(writer);
+            }
             Self::Boolean(x) => {
                 let len = 1;
                 let tag = Tag::new(TagNumber::Application(ApplicationTagNumber::Boolean), len);
@@ -505,6 +511,9 @@ impl<'a> ApplicationDataValue<'a> {
                 Tag::new(TagNumber::Application(ApplicationTagNumber::SignedInt), 4).encode(writer);
                 writer.extend_from_slice(&x.to_be_bytes());
             }
+            ApplicationDataValue::Null => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::Null), 0).encode(writer);
+            }
             ApplicationDataValue::WeeklySchedule(x) => {
                 // no application tag required for weekly schedule
                 x.encode(writer);
@@ -552,6 +561,7 @@ impl<'a> ApplicationDataValue<'a> {
         };
 
         match tag_num {
+            ApplicationTagNumber::Null => Ok(ApplicationDataValue::Null),
             ApplicationTagNumber::Real => {
                 if tag.value != 4 {
                     return Err(Error::Length((
@@ -630,7 +640,7 @@ fn decode_enumerated(
                 .map_err(|x| Error::InvalidVariant(("EngineeringUnits", x)))?;
             Ok(Enumerated::Units(units))
         }
-        PropertyId::PropPresentValue => match object_id.object_type {
+        PropertyId::PropPresentValue | PropertyId::PropPriorityArray => match object_id.object_type {
             ObjectType::ObjectBinaryInput
             | ObjectType::ObjectBinaryOutput
             | ObjectType::ObjectBinaryValue => {
