@@ -81,13 +81,9 @@ async fn decode_weekly_schedule<'a>(
 
     for values in result.objects_with_results {
         for x in values.property_results {
-            match x.value {
-                PropertyValue::PropValue(ApplicationDataValue::WeeklySchedule(weekly_schedule)) => {
-                    return Ok(weekly_schedule)
-                }
-                _ => {
-                    // do nothing
-                }
+            let val: Result<ApplicationDataValue, _> = x.value.try_into();
+            if let Ok(ApplicationDataValue::WeeklySchedule(weekly_schedule)) = val {
+                return Ok(weekly_schedule);
             }
         }
     }

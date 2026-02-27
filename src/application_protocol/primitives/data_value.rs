@@ -3,7 +3,7 @@ use core::{fmt::Display, str::from_utf8};
 use crate::common::{
     daily_schedule::WeeklySchedule,
     error::Error,
-    helper::{decode_unsigned, encode_application_enumerated},
+    helper::{decode_signed, decode_unsigned, encode_application_enumerated},
     io::{Reader, Writer},
     object_id::{ObjectId, ObjectType},
     property_id::PropertyId,
@@ -22,6 +22,7 @@ use {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ApplicationDataValue<'a> {
+    Null,
     Boolean(bool),
     Real(f32),
     Double(f64),
@@ -32,15 +33,20 @@ pub enum ApplicationDataValue<'a> {
     Enumerated(Enumerated),
     BitString(BitString<'a>),
     UnsignedInt(u32),
+    SignedInt(i32),
     WeeklySchedule(WeeklySchedule<'a>),
 }
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ApplicationDataValueWrite<'a> {
+    Null,
     Boolean(bool),
     Enumerated(Enumerated),
     Real(f32),
+    Double(f64),
+    UnsignedInt(u32),
+    SignedInt(i32),
     WeeklySchedule(WeeklySchedule<'a>),
 }
 
@@ -178,6 +184,7 @@ pub struct CharacterString<'a> {
 impl<'a> Display for ApplicationDataValue<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            ApplicationDataValue::Null => write!(f, "Null"),
             ApplicationDataValue::Real(x) => write!(f, "{}", x),
             ApplicationDataValue::Double(x) => write!(f, "{}", x),
             ApplicationDataValue::CharacterString(x) => write!(f, "{}", &x.inner),
@@ -372,6 +379,24 @@ impl<'a> ApplicationDataValueWrite<'a> {
                         let value = decode_enumerated(object_id, property_id, &tag, reader, buf)?;
                         Ok(Self::Enumerated(value))
                     }
+                    TagNumber::Application(ApplicationTagNumber::Double) => {
+                        if tag.value != 8 {
+                            return Err(Error::Length((
+                                "double tag should have length of 8",
+                                tag.value,
+                            )));
+                        }
+                        let bytes = reader.read_bytes(buf)?;
+                        Ok(Self::Double(f64::from_be_bytes(bytes)))
+                    }
+                    TagNumber::Application(ApplicationTagNumber::UnsignedInt) => {
+                        let value = decode_unsigned(tag.value, reader, buf)? as u32;
+                        Ok(Self::UnsignedInt(value))
+                    }
+                    TagNumber::Application(ApplicationTagNumber::SignedInt) => {
+                        let value = decode_signed(tag.value, reader, buf)? as i32;
+                        Ok(Self::SignedInt(value))
+                    }
                     tag_number => Err(Error::TagNotSupported((
                         "ApplicationDataValueWrite decode",
                         tag_number,
@@ -383,6 +408,9 @@ impl<'a> ApplicationDataValueWrite<'a> {
 
     pub fn encode(&self, writer: &mut Writer) {
         match self {
+            Self::Null => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::Null), 0).encode(writer);
+            }
             Self::Boolean(x) => {
                 let len = 1;
                 let tag = Tag::new(TagNumber::Application(ApplicationTagNumber::Boolean), len);
@@ -398,6 +426,24 @@ impl<'a> ApplicationDataValueWrite<'a> {
             }
             Self::Enumerated(x) => {
                 x.encode(writer);
+            }
+            Self::Double(x) => {
+                let len = 8;
+                let tag = Tag::new(TagNumber::Application(ApplicationTagNumber::Double), len);
+                tag.encode(writer);
+                writer.extend_from_slice(&f64::to_be_bytes(*x))
+            }
+            Self::UnsignedInt(x) => {
+                let tag =
+                    Tag::new(TagNumber::Application(ApplicationTagNumber::UnsignedInt), 4);
+                tag.encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes())
+            }
+            Self::SignedInt(x) => {
+                let tag =
+                    Tag::new(TagNumber::Application(ApplicationTagNumber::SignedInt), 4);
+                tag.encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes())
             }
             Self::WeeklySchedule(x) => x.encode(writer),
         }
@@ -461,6 +507,13 @@ impl<'a> ApplicationDataValue<'a> {
                     .encode(writer);
                 writer.extend_from_slice(&x.to_be_bytes());
             }
+            ApplicationDataValue::SignedInt(x) => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::SignedInt), 4).encode(writer);
+                writer.extend_from_slice(&x.to_be_bytes());
+            }
+            ApplicationDataValue::Null => {
+                Tag::new(TagNumber::Application(ApplicationTagNumber::Null), 0).encode(writer);
+            }
             ApplicationDataValue::WeeklySchedule(x) => {
                 // no application tag required for weekly schedule
                 x.encode(writer);
@@ -468,6 +521,25 @@ impl<'a> ApplicationDataValue<'a> {
 
             x => todo!("{:?}", x),
         };
+    }
+
+    #[cfg_attr(feature = "alloc", bacnet_macros::remove_lifetimes_from_fn_args)]
+    pub fn decode_from_buffer(
+        object_id: &ObjectId,
+        property_id: &PropertyId,
+        reader: &mut Reader,
+        buf: &'a [u8],
+    ) -> Result<Self, Error> {
+        match property_id {
+            PropertyId::PropWeeklySchedule => {
+                let ws = WeeklySchedule::decode(reader, buf)?;
+                Ok(Self::WeeklySchedule(ws))
+            }
+            _ => {
+                let tag = Tag::decode(reader, buf)?;
+                Self::decode(&tag, object_id, property_id, reader, buf)
+            }
+        }
     }
 
     #[cfg_attr(feature = "alloc", bacnet_macros::remove_lifetimes_from_fn_args)]
@@ -489,6 +561,7 @@ impl<'a> ApplicationDataValue<'a> {
         };
 
         match tag_num {
+            ApplicationTagNumber::Null => Ok(ApplicationDataValue::Null),
             ApplicationTagNumber::Real => {
                 if tag.value != 4 {
                     return Err(Error::Length((
@@ -523,6 +596,10 @@ impl<'a> ApplicationDataValue<'a> {
             ApplicationTagNumber::UnsignedInt => {
                 let value = decode_unsigned(tag.value, reader, buf)? as u32;
                 Ok(ApplicationDataValue::UnsignedInt(value))
+            }
+            ApplicationTagNumber::SignedInt => {
+                let value = decode_signed(tag.value, reader, buf)?;
+                Ok(ApplicationDataValue::SignedInt(value))
             }
             ApplicationTagNumber::Time => {
                 if tag.value != 4 {
@@ -563,7 +640,7 @@ fn decode_enumerated(
                 .map_err(|x| Error::InvalidVariant(("EngineeringUnits", x)))?;
             Ok(Enumerated::Units(units))
         }
-        PropertyId::PropPresentValue => match object_id.object_type {
+        PropertyId::PropPresentValue | PropertyId::PropPriorityArray => match object_id.object_type {
             ObjectType::ObjectBinaryInput
             | ObjectType::ObjectBinaryOutput
             | ObjectType::ObjectBinaryValue => {

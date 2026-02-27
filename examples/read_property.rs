@@ -1,12 +1,12 @@
 // cargo run --example read_property -- --addr "192.168.1.249:47808"
 // cargo run --example read_property --no-default-features -- --addr "192.168.1.249:47808"
 
-use clap::{command, Parser};
+use clap::Parser;
 use common::MySocket;
 use embedded_bacnet::{
     application_protocol::{
         primitives::data_value::ApplicationDataValue,
-        services::read_property::{ReadProperty, ReadPropertyValue},
+        services::read_property::ReadProperty,
     },
     common::{
         object_id::{ObjectId, ObjectType},
@@ -39,12 +39,10 @@ async fn main() -> Result<(), BacnetError<MySocket>> {
     let result = bacnet.read_property(&mut buf, request).await?;
 
     // print
-    if let ReadPropertyValue::ApplicationDataValue(ApplicationDataValue::Real(value)) =
-        result.property_value
-    {
-        println!("Value: {:?}", value);
-    } else {
-        println!("Unexpected value type returned: {:?}", result);
+    let value: Result<ApplicationDataValue, _> = result.property_value.try_into();
+    match value {
+        Ok(ApplicationDataValue::Real(value)) => println!("Value: {:?}", value),
+        other => println!("Unexpected value type returned: {:?}", other),
     }
 
     Ok(())

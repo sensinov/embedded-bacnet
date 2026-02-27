@@ -4,9 +4,9 @@ use crate::{
     application_protocol::{
         confirmed::{ComplexAck, ComplexAckService, ConfirmedServiceChoice},
         primitives::data_value::ApplicationDataValue,
+        services::read_property::ReadPropertyValue,
     },
     common::{
-        daily_schedule::WeeklySchedule,
         error::Error,
         helper::{
             decode_context_object_id, decode_context_property_id, decode_unsigned,
@@ -25,7 +25,7 @@ use crate::{
 #[cfg(feature = "alloc")]
 use {
     crate::common::spooky::Phantom,
-    alloc::{string::String, vec::Vec},
+    alloc::vec::Vec,
 };
 
 #[cfg(not(feature = "alloc"))]
@@ -255,21 +255,39 @@ impl<'a> PropertyResult<'a> {
     const PROPERTY_VALUE_TAG: u8 = 4;
     const PROPERTY_VALUE_ERROR_TAG: u8 = 5;
 
+    #[cfg(not(feature = "alloc"))]
     pub fn encode(&self, writer: &mut Writer) {
         encode_context_unsigned(writer, Self::PROPERTY_ID_TAG, self.id as u32);
         match &self.value {
             PropertyValue::PropValue(val) => {
                 encode_opening_tag(writer, Self::PROPERTY_VALUE_TAG);
-                val.encode(writer);
+                for item in val {
+                    if let Ok(v) = item {
+                        v.encode(writer);
+                    }
+                }
                 encode_closing_tag(writer, Self::PROPERTY_VALUE_TAG);
             }
             PropertyValue::PropError(_) => todo!(),
-            PropertyValue::PropObjectName(_) => todo!(),
-            PropertyValue::PropDescription(_) => todo!(),
         }
     }
 
-    #[cfg_attr(feature = "alloc", bacnet_macros::remove_lifetimes_from_fn_args)]
+    #[cfg(feature = "alloc")]
+    pub fn encode(&self, writer: &mut Writer) {
+        encode_context_unsigned(writer, Self::PROPERTY_ID_TAG, self.id as u32);
+        match &self.value {
+            PropertyValue::PropValue(val) => {
+                encode_opening_tag(writer, Self::PROPERTY_VALUE_TAG);
+                for v in val.values.iter() {
+                    v.encode(writer);
+                }
+                encode_closing_tag(writer, Self::PROPERTY_VALUE_TAG);
+            }
+            PropertyValue::PropError(_) => todo!(),
+        }
+    }
+
+    #[cfg(not(feature = "alloc"))]
     pub fn decode(reader: &mut Reader, buf: &'a [u8], object_id: &ObjectId) -> Result<Self, Error> {
         let property_id = decode_context_property_id(
             reader,
@@ -279,18 +297,24 @@ impl<'a> PropertyResult<'a> {
         )?;
 
         let (inner_buf, tag_number) = get_tagged_body(reader, buf)?;
-        let mut inner_reader = Reader {
-            index: 0,
-            end: inner_buf.len(),
-        };
 
-        let property_value = Self::decode_property_value(
-            &mut inner_reader,
-            inner_buf,
-            tag_number,
-            &property_id,
-            object_id,
-        )?;
+        let property_value = if tag_number == Self::PROPERTY_VALUE_TAG {
+            let rpv = ReadPropertyValue {
+                object_id: *object_id,
+                property_id,
+                buf: inner_buf,
+            };
+            PropertyValue::PropValue(rpv)
+        } else if tag_number == Self::PROPERTY_VALUE_ERROR_TAG {
+            let mut inner_reader = Reader::new_with_len(inner_buf.len());
+            let error = read_error(&mut inner_reader, inner_buf)?;
+            PropertyValue::PropError(error)
+        } else {
+            return Err(Error::TagNotSupported((
+                "PropertyResultList next",
+                TagNumber::ContextSpecificOpening(tag_number),
+            )));
+        };
 
         Ok(PropertyResult {
             id: property_id,
@@ -298,68 +322,64 @@ impl<'a> PropertyResult<'a> {
         })
     }
 
-    #[cfg_attr(feature = "alloc", bacnet_macros::remove_lifetimes_from_fn_args)]
-    fn decode_property_value(
-        reader: &mut Reader,
-        buf: &'a [u8],
-        tag_number: u8,
-        property_id: &PropertyId,
-        object_id: &ObjectId,
-    ) -> Result<PropertyValue<'a>, Error> {
-        if tag_number == Self::PROPERTY_VALUE_TAG {
-            match property_id {
-                PropertyId::PropEventTimeStamps => {
-                    // ignore for now
-                    Ok(PropertyValue::PropValue(ApplicationDataValue::Boolean(
-                        false,
-                    )))
-                }
-                PropertyId::PropWeeklySchedule => {
-                    let weekly_schedule = WeeklySchedule::decode(reader, buf)?;
-                    Ok(PropertyValue::PropValue(
-                        ApplicationDataValue::WeeklySchedule(weekly_schedule),
-                    ))
-                }
-                property_id => {
-                    let tag = Tag::decode(reader, buf)?;
-                    let value =
-                        ApplicationDataValue::decode(&tag, object_id, property_id, reader, buf)?;
-                    Ok(PropertyValue::PropValue(value))
-                }
+    #[cfg(feature = "alloc")]
+    pub fn decode(reader: &mut Reader, buf: &[u8], object_id: &ObjectId) -> Result<Self, Error> {
+        let property_id = decode_context_property_id(
+            reader,
+            buf,
+            Self::PROPERTY_ID_TAG,
+            "PropertyResultList next property_id",
+        )?;
+
+        let (inner_buf, tag_number) = get_tagged_body(reader, buf)?;
+        let mut inner_reader = Reader::new_with_len(inner_buf.len());
+
+        let property_value = if tag_number == Self::PROPERTY_VALUE_TAG {
+            let mut values = Vec::new();
+            while !inner_reader.eof() {
+                let value = ApplicationDataValue::decode_from_buffer(
+                    object_id,
+                    &property_id,
+                    &mut inner_reader,
+                    inner_buf,
+                )?;
+                values.push(value);
             }
+            PropertyValue::PropValue(ReadPropertyValue { values })
         } else if tag_number == Self::PROPERTY_VALUE_ERROR_TAG {
-            // property read error
-            let error = read_error(reader, buf)?;
-            Ok(PropertyValue::PropError(error))
+            let error = read_error(&mut inner_reader, inner_buf)?;
+            PropertyValue::PropError(error)
         } else {
-            Err(Error::TagNotSupported((
+            return Err(Error::TagNotSupported((
                 "PropertyResultList next",
                 TagNumber::ContextSpecificOpening(tag_number),
-            )))
-        }
+            )));
+        };
+
+        Ok(PropertyResult {
+            id: property_id,
+            value: property_value,
+        })
     }
 }
 
-#[cfg(not(feature = "alloc"))]
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PropertyValue<'a> {
-    PropValue(ApplicationDataValue<'a>),
+    PropValue(ReadPropertyValue<'a>),
     PropError(PropertyAccessError),
-    // TODO: figure out if we need these
-    PropDescription(&'a str),
-    PropObjectName(&'a str),
 }
 
-#[cfg(feature = "alloc")]
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum PropertyValue<'a> {
-    PropValue(ApplicationDataValue<'a>),
-    PropError(PropertyAccessError),
-    // TODO: figure out if we need these
-    PropDescription(String),
-    PropObjectName(String),
+impl<'a> TryFrom<PropertyValue<'a>> for ApplicationDataValue<'a> {
+    type Error = Error;
+
+    fn try_from(value: PropertyValue<'a>) -> Result<Self, Self::Error> {
+        match value {
+            PropertyValue::PropValue(rpv) => rpv.try_into(),
+            PropertyValue::PropError(e) => {
+                Err(Error::PropertyAccessError(e.error_class, e.error_code))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -372,8 +392,8 @@ pub struct PropertyAccessError {
 impl<'a> Display for PropertyValue<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match &self {
-            Self::PropValue(x) => write!(f, "{}", x),
-            _ => write!(f, "property value unprintable",),
+            Self::PropValue(x) => write!(f, "{:?}", x),
+            Self::PropError(e) => write!(f, "Error({:?}/{:?})", e.error_class, e.error_code),
         }
     }
 }
